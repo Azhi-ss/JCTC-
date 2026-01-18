@@ -1,42 +1,47 @@
 import React, { useState } from 'react';
 import { Article } from '../types';
-import { ExternalLink, Users, Calendar, Sparkles, ChevronDown, ChevronUp, BookOpen, FileText } from 'lucide-react';
-import { summarizeArticle } from '../services/geminiService';
+import { ExternalLink, Users, Calendar, ChevronDown, ChevronUp, BookOpen, FileText, Globe } from 'lucide-react';
+import { generateArticleSummary } from '../services/myModelService'; // Optional if we want manual retry
 
 interface ArticleCardProps {
   article: Article;
 }
 
 export const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
-  const [summary, setSummary] = useState<string | null>(null);
-  const [loadingSummary, setLoadingSummary] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const [showAbstract, setShowAbstract] = useState(false);
+  const [localSummary, setLocalSummary] = useState<string | undefined>(article.summary_cn);
+  const [loadingRetry, setLoadingRetry] = useState(false);
 
-  const handleSummarize = async (e: React.MouseEvent) => {
+  // Handle case where summary is missing (maybe API failed during scan)
+  const handleRetrySummary = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (summary) {
-      setIsSummaryExpanded(!isSummaryExpanded);
-      return;
-    }
-
-    setLoadingSummary(true);
+    if (loadingRetry) return;
+    
+    setLoadingRetry(true);
     setIsSummaryExpanded(true);
     try {
-      const result = await summarizeArticle(article.title, article.url);
-      setSummary(result);
-    } catch (err) {
-      setSummary("Failed to load summary.");
+        const updated = await generateArticleSummary(article);
+        setLocalSummary(updated.summary_cn || "Generation failed.");
+    } catch(e) {
+        setLocalSummary("Failed to retrieve summary.");
     } finally {
-      setLoadingSummary(false);
+        setLoadingRetry(false);
     }
   };
 
+  const hasSummary = Boolean(localSummary);
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-300 overflow-hidden group">
+    <div className={`bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all duration-300 overflow-hidden group ${article.is_new ? 'ring-2 ring-green-100' : ''}`}>
       <div className="p-6">
         <div className="flex justify-between items-start gap-4">
           <div className="flex-1">
+             {article.is_new && (
+                <span className="inline-block px-2 py-0.5 mb-2 text-xs font-bold text-green-700 bg-green-100 rounded-md uppercase tracking-wide">
+                    New
+                </span>
+             )}
             <a 
               href={article.url} 
               target="_blank" 
@@ -79,7 +84,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
 
         <div className="flex flex-wrap items-center gap-3 mt-2">
            <button
-            onClick={handleSummarize}
+            onClick={(e) => hasSummary ? setIsSummaryExpanded(!isSummaryExpanded) : handleRetrySummary(e)}
             className={`
               flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
               ${isSummaryExpanded 
@@ -88,13 +93,17 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
               }
             `}
           >
-            {loadingSummary ? (
-              <Sparkles className="w-4 h-4 animate-spin" />
+            {loadingRetry ? (
+               <div className="w-4 h-4 border-2 border-slate-400 border-t-blue-600 rounded-full animate-spin"></div>
             ) : (
-              <Sparkles className="w-4 h-4" />
+                <Globe className="w-4 h-4" />
             )}
-            {summary ? (isSummaryExpanded ? "Hide Summary" : "Show Summary") : "AI Summary (中文)"}
-            {isSummaryExpanded ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
+            
+            {hasSummary 
+                ? (isSummaryExpanded ? "隐藏中文总结" : "中文总结") 
+                : "生成中文总结"
+            }
+            {hasSummary && (isSummaryExpanded ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />)}
           </button>
 
           <button
@@ -108,24 +117,17 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
             `}
           >
             <FileText className="w-4 h-4" />
-            {showAbstract ? "隐藏摘要预览" : "显示摘要预览"}
+            {showAbstract ? "隐藏摘要" : "显示摘要"}
             {showAbstract ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
           </button>
         </div>
 
-        {isSummaryExpanded && (
+        {isSummaryExpanded && hasSummary && (
            <div className="mt-4 p-4 bg-blue-50/50 rounded-lg border border-blue-100 animate-in fade-in slide-in-from-top-2 duration-300">
              <div className="flex gap-3">
                <BookOpen className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                <div className="text-slate-700 text-sm leading-relaxed">
-                 {loadingSummary ? (
-                   <div className="space-y-2">
-                     <div className="h-4 bg-blue-100 rounded w-3/4 animate-pulse"></div>
-                     <div className="h-4 bg-blue-100 rounded w-full animate-pulse"></div>
-                   </div>
-                 ) : (
-                   summary
-                 )}
+                   {localSummary}
                </div>
              </div>
            </div>
@@ -136,11 +138,11 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
             <div>
                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">English Abstract</h4>
                <p className="text-sm text-slate-700 leading-relaxed text-justify">
-                 {article.abstract || "No abstract is currently available for this article."}
+                 {article.abstract || "No abstract available."}
                </p>
             </div>
             <div>
-               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">中文摘要</h4>
+               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">中文摘要 (Translated)</h4>
                <p className="text-sm text-slate-700 leading-relaxed text-justify">
                  {article.abstract_cn || "暂未提供摘要的中文翻译。"}
                </p>
