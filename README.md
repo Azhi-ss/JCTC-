@@ -1,4 +1,4 @@
-#本仓库已经部署到google的ai studio，可以快速使用
+# 本仓库已经部署到google的ai studio，可以快速使用
 # Run and deploy your AI Studio app
 
 This contains everything you need to run your app locally.
